@@ -536,6 +536,7 @@ def fit_chunk(order, chunk, obsname, targ=None, tpltarg=None):
         par.wave = parguess.wave   # why?
         # fix wavelength solution for stabilzied spectographs:
         if 'wave' in fix: par.wave = fixed(parguess.wave)
+        if 'ip' in fix: par.ip = fixed(par.ip)
         if ipB:
             par.bkg = [(0, 0)]
             par.ipB = [(ipB[0], 0)]
