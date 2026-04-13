@@ -581,16 +581,6 @@ def fit_chunk(order, chunk, obsname, targ=None, tpltarg=None):
         if (nr_k1 != nr_k2) or ('tell' in wgt):
             par5, e_params = S_mod.fit(pixel_ok, spec_obs_ok, par3, dx=0.1*show, sig=sig[i_ok], res=(not createtpl)*show, rel_fac=createtpl*show)
             par = par5
-        
-        if wgt in 'tell':            
-           # modelled telluric spectrum
-           sig = smod**2/spec_obs
-           sig /= np.nanmedian(sig[i_ok])
-           sig[spec_obs/np.nanmedian(spec_obs[i_ok])<0.1] = 2
-
-        if (nr_k1 != nr_k2) or ('tell' in wgt):
-            par5, e_params = S_mod.fit(pixel_ok, spec_obs_ok, par3, dx=0.1*show, sig=sig[i_ok], res=(not createtpl)*show, rel_fac=createtpl*show)
-            par = par5
        
     if createtpl:
         if tplname:
