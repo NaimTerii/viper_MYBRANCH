@@ -374,7 +374,8 @@ class GUI_viper:
         if file:
             e_file.delete(0, END)
             e_file.insert(0, file)
-
+            
+    # Define some parameters according to the chosen instrument (cell file, iset, oset, ...)
     def Update_inst(self):
         Inst = importlib.import_module('inst.inst_' + self.combo_inst.get())
          
@@ -387,6 +388,9 @@ class GUI_viper:
 
         self.e_iset.delete(0, END)
         self.e_iset.insert(0, getattr(Inst, 'iset', ':'))
+
+        self.e_oset.delete(0, END)
+        self.e_oset.insert(0, getattr(Inst, 'oset', ':'))
 
         # molecule selection for tellurics
         #self.molec = list(Inst.atmall.keys())
