@@ -288,6 +288,7 @@ def fit_chunk(order, chunk, obsname, targ=None, tpltarg=None):
 
     modset['xcen'] = xcen = np.nanmean(pixel_ok) + 18   # slight offset, then it converges for CES+TauCet
     modset['IP_hs'] = iphs
+    modset['tpl_IP_isconv'] = inst    # True or False : template is already convolved with IP (True for SERVAL templates which come from coadded observations)
 
     if deg_norm_rat:
         # rational polynomial
