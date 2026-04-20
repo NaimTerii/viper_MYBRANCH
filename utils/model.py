@@ -231,7 +231,6 @@ class model:
         for k, v in zip(varykeys, np.sqrt(np.diag(e_params))):
             pnew[k].unc = v
         if kwargs:
-            pass
             self.show(pnew, pixel, spec_obs, par_rv=pnew.rv, **kwargs)
         return pnew, e_params
 
@@ -247,7 +246,6 @@ class model:
         if x2 is None:
             x2 = np.poly1d(params.wave[::-1])(x-self.xcen)
         if par_rv:
-            pass
             gplot.RV2title(", v=%.2f ± %.2f m/s" % (par_rv*1000, par_rv.unc*1000))
         gplot.put("if (!exists('lam')) {lam=1}")
 
