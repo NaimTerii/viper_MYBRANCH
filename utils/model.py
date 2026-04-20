@@ -138,6 +138,9 @@ def convolution(S_star, func_IP, T_cell_atm, tpl_IP_isconv=False, IP_hs=50):
     Convolution with the IP as described in equation (7) of E. Koehler et al. 2025, A&A, 698, A44. 
     However : if star spectrum is already convolved with IP (true for SERVAL templates) : we do not want to convolve it again
     so we approximate the convolution (written "*") as (a x b)*c ~= (a*c) x (b*c) (see appendix A of E. Nagel et al. 2023, A&A, 680, A73)
+    S_star is the stellar template
+    func_IP is the function of the IP (one of the many defined above)
+    T_cell_atm is the transmission of the cell multiplied by transmission of the atmosphere
     '''
     if not tpl_IP_isconv:   # if tpl not convolved with IP : Apply regular convolution
         Sj_eff = np.convolve(func_IP, S_star * T_cell_atm, mode='valid')
