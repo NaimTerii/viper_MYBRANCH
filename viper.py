@@ -849,7 +849,7 @@ if tplname:
     print('reading stellar template')
     wave_tpl, spec_tpl = {}, {}
     for order in orders:
-        wave_tplo, spec_tplo  = Tpl(tplname, order=order, targ=targ)
+        wave_tplo, spec_tplo = Tpl(tplname, order=order, targ=targ)
         if oversampling:
             us = np.linspace(np.log(wave_tplo[0]), np.log(wave_tplo[-1]), oversampling*wave_tplo.size)
             spec_tplo = np.nan_to_num(spec_tplo)
@@ -931,6 +931,7 @@ for n, obsname in enumerate(obsnames):
             RV = rv[oo][0]
             e_RV = e_rv[oo][0]
         else:
+            RV = np.nanmean(rv[oo])
             e_RV = np.nanstd(rv[oo])/(oo.sum()-1)**0.5
         print('RV:', RV, e_RV, bjd, berv)
 
@@ -938,7 +939,6 @@ for n, obsname in enumerate(obsnames):
         print(file=parunit)
 
 
-    elif np.isnan(rv).all():
 if createtpl:
     # combine all telluric corrected spectra to a final template
     wave_tpl_new = {}
