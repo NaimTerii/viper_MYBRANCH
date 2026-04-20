@@ -202,39 +202,6 @@ class model:
             g = self.lnwave_j_eff - self.lnwave_j_eff[0]
             g /= g[-1]
             Sj_eff = (1-g)*Sj_A + g*Sj_B
-        
-        ''' 
-        CARMENES uses the SERVAL templates which require a different convolution. The plan is to generalize this later 
-        so that the convolution is done differently if it is a SERVAL template and not just if it is a CARMENES observation.
-        '''
-        '''
-        # if star spectrum is already convolved with IP (true for SERVAL templates) : approximate the convolution (written "*") as (a x b)*c ~= (a*c) x (b*c) (see  E. Nagel et al. 2023, A&A, 680, A73)
-        if self.tpl_IP_isconv == ('CARM_VIS' or 'CARM_NIR'): 
-            print(f'DOING THE THING WITH {self.tpl_IP_isconv} and STATEMENT {self.tpl_IP_isconv == ("CARM_VIS" or "CARM_NIR")}')
-            print('CHANGE THIS so that it checks if SERVAL template instead')
-            # the convolution np.conv(mode='valid') trims the edges of spec_gas by half of len(self.IP) on either side : so we use S_star(lnwave_j_eff) instead of S_star(lnwave_j) to trim edges of S_star by the same amount
-            Sj_eff = self.S_star(self.lnwave_j_eff-rv/c) * np.convolve(self.IP(self.vk, *coeff_ip), (spec_gas + coeff_bkg[0]), mode='valid')
-            print('DONE THE THING')
-            # if ipB is entered (=factor of IP width variation) : coeff_ipB = multiply IP width (coeff.ip) by ipB ; and use that instead of coeff_ip
-            if len(coeff_ipB):
-                coeff_ipB = [coeff_ipB[0]*coeff_ip[0], *coeff_ip[1:]]
-                Sj_B = self.S_star(self.lnwave_j_eff-rv/c)[self.IP_hs:-self.IP_hs] * np.convolve(self.IP(self.vk, *coeff_ipB), (spec_gas + coeff_bkg[0]), mode='valid')
-                Sj_A = Sj_eff
-                g = self.lnwave_j_eff - self.lnwave_j_eff[0]
-                g /= g[-1]  # normalization? since g is increasing ; g=1 for maximal separation (lnwave_j_eff[-1] - lnwave_j_eff[0])
-                Sj_eff = (1-g)*Sj_A + g*Sj_B
-           
-        else:   
-            # regular convolution as described in E. Koehler et al. 2025, A&A, 698, A44
-            Sj_eff = np.convolve(self.IP(self.vk, *coeff_ip), self.S_star(self.lnwave_j-rv/c) * (spec_gas + coeff_bkg[0]), mode='valid')
-            if len(coeff_ipB):
-                coeff_ipB = [coeff_ipB[0]*coeff_ip[0], *coeff_ip[1:]]
-                Sj_B = np.convolve(self.IP(self.vk, *coeff_ipB), self.S_star(self.lnwave_j-rv/c) * (spec_gas + coeff_bkg[0]), mode='valid')
-                Sj_A = Sj_eff
-                g = self.lnwave_j_eff - self.lnwave_j_eff[0]
-                g /= g[-1]
-                Sj_eff = (1-g)*Sj_A + g*Sj_B
-            '''
 
         # wavelength relation
         #    lam(x) = b0 + b1 * x + b2 * x^2
