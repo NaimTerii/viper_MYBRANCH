@@ -8,7 +8,7 @@ This file was written by Naïm Teriitehau-Martin. For any issues, please contact
 """
 
 ###### CARM_VIS ######
-''' THIS IS A WORK IN PROGRESS '''
+''' THIS IS STILL A WORK IN PROGRESS as of 20/04/2026'''
 
 import numpy as np
 from astropy.io import fits
@@ -21,17 +21,13 @@ from scipy.interpolate import CubicSpline
 # from inst.template import read_tpl   #### DO NOT NEED IF APPLY BARYCENTRIC CORRECTION IN THIS FILE?
 from inst.FTS_resample import resample, FTSfits 
 from inst.airtovac import airtovac
-import timeit
 
-oset = '20:50'    # Relative orders that are analyzed (Here we keep only the 20th to 49th available orders, ) (for CARM_VIS, the absolute orders start at 118 [low wavlengths] and end at 58 [high wavelengths])
-iset='400:3600'    # Keep the pixels between X and Y ; Do not analyze the ones outside of that range -- Chosen arbitrarily and can be changed by the user
+oset = '20:50'    # Relative orders that are analyzed (Here we keep only the 20th to 50th available orders. For CARM_VIS, the absolute orders start at 118 [low wavlengths] and end at 58 [high wavelengths])
+iset='400:3600'    # Keep the pixels between X and Y ; Do not analyze the ones outside of that range -- Chosen arbitrarily and can be changed by the user (goes up to 0:4000)
+
 
 # Convert FWHM resolution to sigma
-''' The IP is currently set to a very low number, because CARMENES usually uses SERVAL templates, and those have the spectrum 
-of the star already convoluted with the IP. But the viper code tries to do another convolution, which we do not want.
-'''
-#ip_guess = {'s' : 300_000/(39_594_600*2*np.sqrt(2*np.log(2)))}    # speed of light divided by (spectrograph_resolution x factor) -- Assuming Gaussian IP, FWHM defined in speed v
-ip_guess = {'s' : 300_000/(94_600*2*np.sqrt(2*np.log(2)))}  # Regular ip_guess as it should be
+ip_guess = {'s' : c.to_value(u.km/u.s)/(94_600*2*np.sqrt(2*np.log(2)))}  # speed of light [km/s] divided by (spectrograph_resolution x factor) -- Assuming Gaussian IP for factor ; FWHM is defined in terms of speed dv [km/s] (which is ~= delta(ln(wavelen)))
 
 # Location of CARMENES Spectrograph -- Obtained from the data headers (hdr keys 'HIERARCH CAHA TEL GEOLAT' and 'HIERARCH CAHA TEL GEOLON' and 'HIERARCH CAHA TEL GEOELEV')
 location = carmenes = EarthLocation.from_geodetic(lat=37.2236*u.deg, lon=-2.54625*u.deg, height=2168.*u.m)
@@ -45,14 +41,16 @@ def Spectrum(filename='', order=None, targ=None):
     #exptime = hdr.get('EXPTIME')    # Exposure time in seconds
     ''' HERE WE GET TMEAN FROM HEADERS (so it is an absolute value, also less reliable because it is in header)
     I HAVE TO FIND A WAY TO GET IT FROM THE serval DIR (which is the same as the CARMENES_templates btw) -- 
-    The problem being that I have to somehow call that file, which implies the user has the file and it is in the exact same path as how I call it'''
-    exptime_tmean = hdr.get('HIERARCH CARACAL TMEAN') * u.s  # Flux-weighted midpoint of exposure (more accurate than exptime)
+    The problem being that I have to somehow call that file, which implies the user has the file and it is in the exact same path as how I call it
+    
+    ---> In the meantime, just check if there is a file in the given path (path will automatically be generated, like I did in SCRIPT_checks_if_serval_in_hdr.py
+         and assuming that it is only used by people in the IAG intranet? And if no file found (ex. path not exist because used by external user) then just use hdr TMEAN?'''
+    exptime_tmean = hdr.get('HIERARCH CARACAL TMEAN') * u.s  # Flux-weighted midpoint of exposure (more accurate than the exptime)
 
     # If target not specified while calling Spectrum() : Define target from data file header info
     ra = hdr.get('RA', np.nan)     # RightAscension of target [degrees]
     dec = hdr.get('DEC', np.nan)    # Declination of target [degrees]
-    '''The line below seems to be necessary for some SERVAL templates'''
-    dec = (dec+90) % 180 - 90   #Declination needs to be between -90 and 90 deg, but headers give values way past that
+    dec = (dec+90) % 180 - 90   #Declination needs to be between -90 and 90 deg, but some SERVAL tpl headers give values way bigger than that so we fix it
     targdrs = SkyCoord(ra=ra*u.deg, dec=dec*u.deg)
     if not targ: targ = targdrs
     
@@ -68,7 +66,7 @@ def Spectrum(filename='', order=None, targ=None):
     # Read file data to obtain spec, wavelen, err
     spec = hdu['SPEC'].data    # Flux for spectrum
     wavelen = hdu['WAVE'].data    # Vacuum wavelength for each pixel [angstrom]
-    err_spec = hdu['SIG'].data    # Get error estimate for spec
+    err_spec = hdu['SIG'].data    # Error estimate for flux
     
     
     # If specific order is selected, only keep that order
@@ -82,72 +80,64 @@ def Spectrum(filename='', order=None, targ=None):
     return pixel, wavelen, spec, err_spec, flag_pixel, bjd, berv
 
 
-
 def Tpl(tplname, order=None, targ=None):
     '''
     Tpl should return barycentric corrected wavelengths.
     read_tpl(tplname) tries to call Spectrum(tplname=template_file) from the indicated inst file and apply a
     barycentric correction to the returned wavelen (if tplname doesn't end with "_tpl")
-    
-    Currently this only works with templates that store wavelen data as natural log wavelen (like the ones produced by serval)
-    Because the wavelen are converted into linear wavelen via np.exp()
     '''
+    # Check if template already convolved with the IP (If yes, will need to apply a different convolution in utils/model.py) ;
+    # IMPORTANT REMARK : Currently it only checks if template comes from SERVAL (no idea how it could be generalized to other sources of templates)
+    hdr = fits.open(tplname, ignore_blank=True)[0].header
+    tpl_is_serval = 'HIERARCH SERVAL COADD NUM' in hdr    # all SERVAL templates contain this key to indicate number of spectra used for coadd, but none of the data files contain it
     
+    global tpl_IP_isconv    # define as global so it can be called from other files
+    tpl_IP_isconv = tpl_is_serval    # currently it only actually checks if the template comes from SERVAL
     
-    '''
-    SERVAL templates store spec and natural log of vacuum wavelen as the "knot positions of uniform B-spline"
-    so we need to convert to linear wavelen then apply cubic spline to get data between the knots
-    '''
-    if tplname.endswith('.fits'):   #The only type of SERVAL template I am aware of
+
+    if tplname.endswith('.fits'):
         try:
             pixel, wavelen_k, spec_k, err_spec_k, flag_pixel, bjd, berv = Spectrum(tplname, order=order, targ=targ)
-            '''SERVAL already applies barycentric correction to templates, so the line below can be removed'''
-            #wavelen_k *= 1 + (berv*u.km/u.s/c).to_value('') # Apply barycentric correction
             
-            # CubicSpline interpolation to artificially improve sampling in the template
-            wavelen = np.linspace(wavelen_k[0], wavelen_k[-1], 4*wavelen_k.size)    # Interpolate with 4 times as many points
-            spec = CubicSpline(wavelen_k, spec_k, bc_type='natural')(wavelen)   
-            wavelen = np.exp(wavelen) # Convert log knots to linear knots
+            #SERVAL templates store flux and natural log of vacuum wavelen as the "knot positions of uniform B-spline" 
+            #so we need to apply cubic spline to get data between the knots, and convert to linear wavelen
+            if tpl_is_serval:
+                # CubicSpline interpolation to artificially improve sampling in the template
+                wavelen = np.linspace(wavelen_k[0], wavelen_k[-1], 4*wavelen_k.size)    # Interpolate with 4 times as many points
+                spec = CubicSpline(wavelen_k, spec_k, bc_type='natural')(wavelen)   
+                wavelen = np.exp(wavelen) # Convert log knots to linear knots
+                
+            # tpl_R = 91_000
         except:
-            print('Error : Barycentric correction for the selected .fits template has failed.')
+            print('\x1b[0;31;40mError : Barycentric correction for the selected .fits template has failed. \x1b[0m')
             exit()
             
     elif tplname.endswith('.all'):    # for PEPSI templates
         try:
             hdu = fits.open(tplname)
-            wavelen = hdu[1].data.field('Arg')
-            spec = hdu[1].data.field('Fun')
+            wavelen = hdu[1].data.field('Arg')  # Wavelengths for template spectrum
+            spec = hdu[1].data.field('Fun') # Flux for template spectrum
             wavelen = airtovac(wavelen)    # convert the wavelength values from air to vacuum. Unlike SERVAL templates which already take this into account
             
+            '''
+            Check if template is from serval using something like the lines below?
+            there was Also something like if the resolution of the tpl is high enough then do not convolve with IP???
+                
+            global tpl_has_IP
+            # tpl_R = 200_000
+            tpl_has_IP = True
+            spec.tpl_has_IP = True
+            '''
         except:
-            print('Error : Barycentric correction for the selected .all template has failed.')
+            print('\x1b[0;31;40mError : Barycentric correction for the selected .all template has failed. \x1b[0m')
             exit()
             
     else:
         print('\x1b[0;31;40m' +'Error: Template format is not known for the selected instrument. \nPlease select a .fits file or .all file'+ '\x1b[0m')    
         exit()
-    
-
-    
-    
-    
-    print(f'tplname is {tplname}')
-    hdr = fits.open(str(tplname), ignore_blank=True)[0].header
-    def thing1():
-        if any(["SERVAL COADD" in key for key in  hdr]):
-            a = True
-    def thing2():
-        if any(["SERVAL COADD" in key for key in  list(hdr.keys())]):
-            a = True
-    def thing3():
-        if 'HIERARCH SERVAL COADD SN010' in hdr:
-            a = True
-    t1 = timeit.timeit(stmt = thing1, number=100)
-    t2 = timeit.timeit(stmt = thing2, number=100)
-    t3 = timeit.timeit(stmt = thing3, number=100)
-    print(f'\n.\n.\n {t1} WITH ANY REVERSE \n.\n.\n')
-    print(f'\n.\n.\n {t2} WITH ANY \n.\n.\n')
-    print(f'\n.\n.\n {t3} WITH otherthang \n.\n.\n')
+        
+    #flux
+    #spec = (wavelen, flux, R) reutrn dict ? would need to change the other inst files and viper.py
     return wavelen, spec
 
 
@@ -158,16 +148,13 @@ def FTS(ftsname='None', dv=100):
     Converts wavenumbers [cm] to wavelengths (w) [angstrom], also inverts w and f arrays ( [::-1] ) so that wavelengths are in ascending order
     resample() returns w, f, uj= np.arange(ln(w)) with step dv/c, iod_j=flux interpolated from uj
     '''
-    print('fts was called')
     return resample(*FTSfits(ftsname), dv=dv)
 
 
 
 # If we want to create a template
 def write_fits(wtpl_all, tpl_all, e_all, list_files, file_out):
-    print(' nuh uh write fit')
-    
-    
+
     # Get data from header of the first fits file
     file_in = list_files[0]
     hdu = fits.open(file_in, ignore_blank=True)

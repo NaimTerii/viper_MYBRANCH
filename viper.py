@@ -32,7 +32,6 @@ try:
 except: 
     import vpr
 
-
 viperdir = os.path.dirname(os.path.realpath(__file__)) + os.sep
 
 c = 299792.458   # [km/s] speed of light
@@ -234,14 +233,13 @@ if __name__ == "__main__" or __name__ == "viper.viper":
 def fit_chunk(order, chunk, obsname, targ=None, tpltarg=None):
     ####  observation  ####
     pixel, wave_obs, spec_obs, err_obs, flag_obs, bjd, berv = Spectrum(obsname, order=order, targ=targ)
-    
     if telluric == 'mask':
         flag_obs[mskatm(wave_obs) > 0.1] |= flag.atm
     flag_obs[np.isnan(spec_obs)] |= flag.nan
 
     # select common wavelength range
-    lmin = max(wave_obs[iset][0], wave_tpl[order][0], wave_cell[0])
-    lmax = min(wave_obs[iset][-1], wave_tpl[order][-1], wave_cell[-1])
+    lmin = max(wave_obs[iset][0], wave_tpl[order][0], wave_cell[0])     # set the lower limit : the highest of the min wavelengths from obs, tpl, cell
+    lmax = min(wave_obs[iset][-1], wave_tpl[order][-1], wave_cell[-1])  # set the upper limit : the lowest of the max wavelengths from obs, tpl, cell
 
     # trim the observation to a range valid for the model
     #  vcut = 100   # [km/s]
@@ -253,7 +251,7 @@ def fit_chunk(order, chunk, obsname, targ=None, tpltarg=None):
     lnwave_j = lnwave_j_full[sj]
     spec_cell_j = spec_cell_j_full[sj]
 
-    ibeg, iend = np.where(flag_obs==0)[0][[0, -1]]   # the first and last pixel that is not trimmed
+    ibeg, iend = np.where(flag_obs==0)[0][[0, -1]]   # ibeg, iend = first, last pixel that are not trimmed
     
     len_ch = int((iend-ibeg)/chunks)
     ibeg = ibeg + chunk*len_ch
@@ -262,7 +260,6 @@ def fit_chunk(order, chunk, obsname, targ=None, tpltarg=None):
         # divide dataset into chunks
         flag_obs[:ibeg] |= flag.chunk
         flag_obs[iend:] |= flag.chunk
-
     if flagfile:
         # clip selected pixel ranges in order          
         for msk_i in msk_o[msk_o.order==order]:
@@ -288,7 +285,7 @@ def fit_chunk(order, chunk, obsname, targ=None, tpltarg=None):
 
     modset['xcen'] = xcen = np.nanmean(pixel_ok) + 18   # slight offset, then it converges for CES+TauCet
     modset['IP_hs'] = iphs
-    modset['tpl_IP_isconv'] = inst    # True or False : template is already convolved with IP (True for SERVAL templates which come from coadded observations)
+    modset['tpl_IP_isconv'] = Inst.tpl_IP_isconv    # True or False : template is already convolved with IP       
 
     if deg_norm_rat:
         # rational polynomial
@@ -333,7 +330,7 @@ def fit_chunk(order, chunk, obsname, targ=None, tpltarg=None):
         # add parameter for telluric position shift if selected
         if tellshift:
             par_atm.append((1, np.inf))
-
+            
     if demo & 1:
         # pre-look raw input
         # plot data, template, iodine, and tellurics with some scaling
@@ -353,7 +350,6 @@ def fit_chunk(order, chunk, obsname, targ=None, tpltarg=None):
         
         pause('demo 1: raw input')
 
-
     # convert discrete template into a function
     if tplname:
         S_star = lambda x: np.interp(x, np.log(wave_tpl[order]) - np.log(1+berv/c), spec_tpl[order])  # Apply barycentric motion
@@ -369,7 +365,7 @@ def fit_chunk(order, chunk, obsname, targ=None, tpltarg=None):
         # plot the IP
         gplot.xlabel('"[km/s]"')
         gplot.ylabel('"contribution"')
-        gplot(S_mod.vk, S_mod.IP(S_mod.vk), 't "IP model"')
+        gplot(S_mod.vk, S_mod.IP(S_mod.vk, *ip_guess), 't "IP model"')
         pause('demo 2: default IP')
 
     if demo & 4:
@@ -482,9 +478,9 @@ def fit_chunk(order, chunk, obsname, targ=None, tpltarg=None):
 
 
     if kapsig[0]:
-        # first kappa sigma clipping of outliers
+        # first kappa sigma clipping of outliers (clip data points whose residuals are too high compared to user-defined kapsig)
         smod = S_mod(pixel, **par3)
-        resid = spec_obs - smod
+        resid = spec_obs - smod    # diff between flux obs data and model
         resid[flag_obs != 0] = np.nan
 
         flag_obs[abs(resid) >= (kapsig[0]*np.nanstd(resid))] |= flag.clip
@@ -533,7 +529,7 @@ def fit_chunk(order, chunk, obsname, targ=None, tpltarg=None):
     show = (order in look) or (order in lookfast)
 
     if 1:
-        # par from prefit, (not pre-clip)
+        # par from prefit, (not pre-clipfixed)
         par.wave = parguess.wave   # why?
         # fix wavelength solution for stabilzied spectographs:
         if 'wave' in fix: par.wave = fixed(parguess.wave)
@@ -546,9 +542,9 @@ def fit_chunk(order, chunk, obsname, targ=None, tpltarg=None):
 
         par4, e_params = S_mod.fit(pixel_ok, spec_obs_ok, par, dx=0.1*show, sig=sig[i_ok], res=(not createtpl)*show, rel_fac=createtpl*show)
         par = par4
-
+        
     if kapsig[-1]:
-        # second kappa sigma clipping of outliers
+        # second kappa sigma clipping of outliers (clip data point if its residuals are too high)
         smod = S_mod(pixel, **par)
         resid = spec_obs - smod
         resid[flag_obs != 0] = np.nan
@@ -556,8 +552,8 @@ def fit_chunk(order, chunk, obsname, targ=None, tpltarg=None):
         nr_k1 = np.count_nonzero(flag_obs)
         flag_obs[abs(resid) >= (kapsig[-1]*np.nanstd(resid))] |= flag.clip
         nr_k2 = np.count_nonzero(flag_obs)
-
-        # test if outliers were flagged
+        
+        # test if outliers were flagged in the second clipping, and if flagged then remove them from pixel_ok
         if nr_k1 != nr_k2:
             i_ok = np.where(flag_obs == 0)[0]
             pixel_ok = pixel[i_ok]
@@ -579,11 +575,11 @@ def fit_chunk(order, chunk, obsname, targ=None, tpltarg=None):
                 sig /= np.nanmedian(sig[i_ok])
                 # down-weigth saturated lines
                 sig[spec_obs/np.nanmedian(spec_obs[i_ok])<0.1] = 2
-
+        
         if (nr_k1 != nr_k2) or ('tell' in wgt):
             par5, e_params = S_mod.fit(pixel_ok, spec_obs_ok, par3, dx=0.1*show, sig=sig[i_ok], res=(not createtpl)*show, rel_fac=createtpl*show)
             par = par5
-       
+        
     if createtpl:
         if tplname:
             # model just the tellurics; exclude stellar lines
@@ -676,7 +672,7 @@ def fit_chunk(order, chunk, obsname, targ=None, tpltarg=None):
     # overplot stellar spectrum
     #gplot+(np.exp(lnwave_j), S_star(lnwave_j)/S_star(lnwave_j).max()*spec_obs_ok.max(), 'w l lc 9')
 
-    rvo, e_rvo = 1000*par.rv, 1000*par.rv.unc   # convert to m/s
+    rvo, e_rvo = 1000*par.rv, 1000*par.rv.unc   # convert rv and rv uncertainty to m/s
     #prms = S_mod.show([params[0], params[1:1+1+deg_norm], params[2+deg_norm:2+deg_norm+1+deg_wave], params[3+deg_norm+deg_wave:]], pixel_ok, spec_obs_ok, dx=0.1)
     # gplot+(wave_tpl[s_s]*(1-berv/c), spec_tpl[s_s]*parguess_norm, 'w lp lc 4 ps 0.5')
     #gplot+(pixel_ok, S_star(np.log(np.poly1d(b[::-1])(pixel_ok))+(v)/c), 'w lp ps 0.5')
@@ -703,9 +699,9 @@ def fit_chunk(order, chunk, obsname, targ=None, tpltarg=None):
         pause(f'lookres {o}')
 
     if order in lookpar:   
-        sa = tplname is not None
-        sb = sa + deg_norm+1
-        ss = sb + deg_wave+1
+        sa = tplname is not None    # slice a (=1 if template was given, =0 otherwise)
+        sb = sa + deg_norm+1    # slice b : increase slice size to include poly coeffs in norm params (as many as deg_norm)
+        ss = sb + deg_wave+1    # slice s increase slice size to include poly coeffs in par.wave (as many as deg_wave)
         # error estimation
         # uncertainty in continuum
         xl = np.log(np.poly1d(par.wave[::-1])(pixel-xcen))
@@ -738,10 +734,11 @@ def fit_chunk(order, chunk, obsname, targ=None, tpltarg=None):
               'lc 3 ps 0.5 t "IP", "" us 1:3:4 w filledcurves fill fs transparent solid 0.2 lc 3 t "1{/Symbol s}"')
         gplot.unset('multiplot')
         pause('lookpar', par.ip)
-
+        
     return rvo, e_rvo, bjd.jd, berv, par, e_params, prms
 
 
+# gather the data files
 obsnames = np.array(sorted(glob.glob(obspath)))[nset]
 obsnames = [x for x in obsnames if not any(pat in os.path.basename(x) for pat in nexcl)]
 
@@ -754,6 +751,7 @@ if targname:
 orders = np.r_[oset]
 print(orders)
 
+# set up arrays for rv and e_rv (=rv uncertainty ); currently nan arrays, with one value per chunk for every order
 rv = np.nan * np.empty(chunks*len(orders))
 e_rv = np.nan * np.empty(chunks*len(orders))
 
@@ -769,8 +767,8 @@ print('BJD RV e_RV BERV', *map("rv{0} e_rv{0}".format, colnums), 'filename', fil
 pixel, wave0, spec0, err0, flag0, bjd, berv = Spectrum(obsnames[0], order=orders[0], targ=targ)
 pixel, wave1, spec1, err1, flag1, bjd, berv = Spectrum(obsnames[0], order=orders[-1], targ=targ)
     
-obs_lmin = np.min([wave0[0], wave0[-1], wave1[0], wave1[-1]])
-obs_lmax = np.max([wave0[0], wave0[-1], wave1[0], wave1[-1]])
+obs_lmin = np.min([wave0[0], wave0[-1], wave1[0], wave1[-1]])   # smallest wavelength in observation
+obs_lmax = np.max([wave0[0], wave0[-1], wave1[0], wave1[-1]])   # biggest wavelength in observation
 
 ####  FTS  ####
 # using the supersampled log(wavelength) space with knot index j
@@ -778,7 +776,7 @@ obs_lmax = np.max([wave0[0], wave0[-1], wave1[0], wave1[-1]])
 if ftsname != 'None':
     wave_cell, spec_cell, lnwave_j_full, spec_cell_j_full = FTS(ftsname)
 else:
-    # create fake cell spectrum 
+    # create fake cell spectrum (Has spectrum transmission = 1 through the entire observation wavelength range)
     wave_cell = np.linspace(obs_lmin, obs_lmax, len(pixel)*len(orders)*200)
     spec_cell = wave_cell*0 + 1
     u = np.log(wave_cell)
@@ -851,7 +849,7 @@ if tplname:
     print('reading stellar template')
     wave_tpl, spec_tpl = {}, {}
     for order in orders:
-        wave_tplo, spec_tplo = Tpl(tplname, order=order, targ=targ)
+        wave_tplo, spec_tplo  = Tpl(tplname, order=order, targ=targ)
         if oversampling:
             us = np.linspace(np.log(wave_tplo[0]), np.log(wave_tplo[-1]), oversampling*wave_tplo.size)
             spec_tplo = np.nan_to_num(spec_tplo)
@@ -902,15 +900,15 @@ for n, obsname in enumerate(obsnames):
             try:
                 gplot.RV2title = lambda x: gplot.key('title noenhanced "%s (n=%s, o=%s%s)"'% (filename, n+1, o, x))
                 gplot.RV2title('')
-        
+    
                 rv[i_o*chunks+ch], e_rv[i_o*chunks+ch], bjd, berv, params, e_params, prms = fit_chunk(o, ch, obsname=obsname, targ=targ)
-
                 print(n+1, o, ch, rv[i_o*chunks+ch], e_rv[i_o*chunks+ch])
                 # just for compability, remove Params(ipB=[]) later !!
                 if 'ipB' in params: params.pop('ipB')
                 if not deg_bkg: params.pop('bkg', None)                       
                 params.rv.value *= 1000.   # convert to m/s -> same unit in .par.dat and .rvo.dat     
                 params.rv.unc *= 1000.
+
 
                 if headrow:
                     headrow = False
@@ -927,14 +925,12 @@ for n, obsname in enumerate(obsnames):
                 if repr(e) == 'BdbQuit()':
                     exit()
                 print("Order failed due to:", repr(e))
-
     if not np.isnan(rv).all():
         oo = np.isfinite(e_rv)
         if oo.sum() == 1:
             RV = rv[oo][0]
             e_RV = e_rv[oo][0]
         else:
-            RV = np.nanmean(rv[oo])
             e_RV = np.nanstd(rv[oo])/(oo.sum()-1)**0.5
         print('RV:', RV, e_RV, bjd, berv)
 
@@ -942,6 +938,7 @@ for n, obsname in enumerate(obsnames):
         print(file=parunit)
 
 
+    elif np.isnan(rv).all():
 if createtpl:
     # combine all telluric corrected spectra to a final template
     wave_tpl_new = {}
