@@ -68,6 +68,11 @@ def Spectrum(filename='', order=None, targ=None):
 
 def Tpl(tplname, order=None, targ=None):
     '''Tpl should return barycentric corrected wavelengths'''
+	
+	# Check if template already convolved with the IP (If yes, will need to apply a different convolution in utils/model.py) ;
+    # Currently not applied to this instrument ; will need to add in the future if required
+    global tpl_IP_isconv    # define as global so it can be called from other files
+    tpl_IP_isconv = False    # Insert some condition to check if True or False (e.g. check inst/CARM_VIS.py)
 
     if tplname.endswith('1d.fits') and not tplname.endswith('_s1d.fits'):
         hdu = fits.open(tplname, ignore_blank=True)[0]
