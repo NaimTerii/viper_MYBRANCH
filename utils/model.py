@@ -132,27 +132,49 @@ def pade(x, a, b):
     return y
 
 
+
+def convolution(S_star, func_IP, T_cell_atm, tpl_IP_isconv=False, IP_hs=50):
+    '''
+    Convolution with the IP as described in equation (7) of E. Koehler et al. 2025, A&A, 698, A44. 
+    However : if star spectrum is already convolved with IP (true for SERVAL templates) : we do not want to convolve it again
+    so we approximate the convolution (written "*") as (a x b)*c ~= (a*c) x (b*c) (see appendix A of E. Nagel et al. 2023, A&A, 680, A73)
+    '''
+    if not tpl_IP_isconv:   # if tpl not convolved with IP : Apply regular convolution
+        Sj_eff = np.convolve(func_IP, S_star * T_cell_atm, mode='valid')
+
+    #if tpl already convolved with IP (eg. during template creation by coadding observation spectra): Take S_star out of convolution with IP 
+    elif tpl_IP_isconv: 
+        Sj_eff = S_star[IP_hs:-IP_hs] * np.convolve(func_IP, T_cell_atm, mode='valid')
+        #the convolution np.conv(mode='valid') trims the edges of the largest array (removes as many data points as there are in the smallest array -- see numpy documentation). 
+        #here it trims [len(func_IP) = IP_hs] data points on either side of T_cell_atm (which has same length as S_star) : so we trim S_star the same way to be able to multiply it with the convolution
+    
+    return Sj_eff
+
+
 class model:
     '''
     The forward model.
 
     '''
-    def __init__(self, *args, func_norm=poly, IP_hs=50, xcen=0):
+    def __init__(self, *args, func_norm=poly, IP_hs=50, xcen=0, tpl_IP_isconv=False):
         # IP_hs: Half size of the IP (number of sampling knots).
         # xcen: Central pixel (to center polynomial for numeric reason).
-
         self.xcen = xcen
         self.S_star, self.lnwave_j, self.spec_cell_j, self.fluxes_molec, self.IP = args
         # convolving with IP will reduce the valid wavelength range
-        self.dx = self.lnwave_j[1] - self.lnwave_j[0]   # step size of the uniform sampled grid
+        self.dx = self.lnwave_j[1] - self.lnwave_j[0]   # step size of the uniform sampled grid (wavelength)
         self.IP_hs = IP_hs
-        self.vk = np.arange(-IP_hs, IP_hs+1) * self.dx * c
+        self.vk = np.arange(-IP_hs, IP_hs+1) * self.dx * c    # position of sampling knots for the IP (expressed as speed)
         self.lnwave_j_eff = self.lnwave_j[IP_hs:-IP_hs]    # valid grid
         self.func_norm = func_norm
+        self.tpl_IP_isconv = tpl_IP_isconv
         #print("sampling [km/s]:", self.dx*c)
+        
+
 
     def __call__(self, pixel, rv=0, norm=[1], wave=[], ip=[], atm=[], bkg=[0], ipB=[]):
         # renaming (coeff is ok prefix below, but too verbose for par)
+        #the arguments of this function are the parameters (ip = par.ip, wave = par.wave, ...)
         coeff_norm, coeff_wave, coeff_ip, coeff_atm, coeff_bkg, coeff_ipB = norm, wave, ip, atm, bkg, ipB
 
         spec_gas = 1 * self.spec_cell_j
@@ -167,12 +189,12 @@ class model:
 
             spec_gas *= flux_atm
 
-        # IP convolution
-        Sj_eff = np.convolve(self.IP(self.vk, *coeff_ip), self.S_star(self.lnwave_j-rv/c) * (spec_gas + coeff_bkg[0]), mode='valid')
 
+        # apply IP convolution
+        Sj_eff = convolution(S_star=self.S_star(self.lnwave_j-rv/c), func_IP=self.IP(self.vk, *coeff_ip), T_cell_atm=(spec_gas + coeff_bkg[0]), tpl_IP_isconv=self.tpl_IP_isconv, IP_hs=self.IP_hs)
         if len(coeff_ipB):
             coeff_ipB = [coeff_ipB[0]*coeff_ip[0], *coeff_ip[1:]]
-            Sj_B = np.convolve(self.IP(self.vk, *coeff_ipB), self.S_star(self.lnwave_j-rv/c) * (spec_gas + coeff_bkg[0]), mode='valid')
+            Sj_B =convolution(S_star=self.S_star(self.lnwave_j-rv/c), func_IP=self.IP(self.vk, *coeff_ipB), T_cell_atm=(spec_gas + coeff_bkg[0]), tpl_IP_isconv=self.tpl_IP_isconv, IP_hs=self.IP_hs)
             Sj_A = Sj_eff
             g = self.lnwave_j_eff - self.lnwave_j_eff[0]
             g /= g[-1]
@@ -184,11 +206,12 @@ class model:
 
         # sampling to pixel
         Si_eff = np.interp(lnwave_obs, self.lnwave_j_eff, Sj_eff)
-
+        
         # flux normalisation
         Si_mod = self.func_norm(pixel-self.xcen, coeff_norm) * Si_eff
         #Si_mod = self.func_norm((np.exp(lnwave_obs)-b[0]-coeff_norm[-1]), coeff_norm[:-1]) * Si_eff
         return Si_mod
+
 
     def fit(self, pixel, spec_obs, par, sig=[], **kwargs):
         '''
@@ -198,18 +221,17 @@ class model:
 
         S_model = lambda x, *params: self(x, **(par + dict(zip(varykeys, params))))
         #S_model(pixel, *varyvals)
-
+        
         params, e_params = curve_fit(S_model, pixel, spec_obs, p0=varyvals, sigma=sig, absolute_sigma=False, epsfcn=1e-12)
-
         pnew = par + dict(zip(varykeys, params))
         # attach uncertainties
         for k, v in zip(varykeys, np.sqrt(np.diag(e_params))):
             pnew[k].unc = v
-
         if kwargs:
+            pass
             self.show(pnew, pixel, spec_obs, par_rv=pnew.rv, **kwargs)
-
         return pnew, e_params
+
 
     def show(self, params, x, y, par_rv=None, res=True, x2=None, dx=None, rel_fac=None):
         '''
@@ -222,8 +244,8 @@ class model:
         if x2 is None:
             x2 = np.poly1d(params.wave[::-1])(x-self.xcen)
         if par_rv:
+            pass
             gplot.RV2title(", v=%.2f ± %.2f m/s" % (par_rv*1000, par_rv.unc*1000))
-
         gplot.put("if (!exists('lam')) {lam=1}")
 
         gplot.key('horizontal')
@@ -232,7 +254,7 @@ class model:
         # toggle between pixel and wavelength with shortcut "$"
         gplot.bind('"$" "lam=!lam; set xlabel lam?\\"Vacuum wavelength [Å]\\":\\"Pixel x\\"; replot"')
         args = (x, y, ymod, x2, 'us lam?4:1:2:3 w lp pt 7 ps 0.5 t "obs",',
-          '"" us lam?4:1:3 w p pt 6 ps 0.5 lc 3 t "model"')
+          '"" us lam?4:1:3 w p pt 6 ps 0.5 lc 3 t "model"')    # add to the plot : x=pixels, y=observation flux, ymod=fitted flux model, x2 = wavelen
         prms = np.nan   # percentage prms
         if dx:
             xx = np.arange(x.min(), x.max(), dx)
@@ -240,7 +262,7 @@ class model:
             yymod = self(xx, **params)
             args += (",", xx, yymod, xx2, 'us lam?3:1:2 w l lc 3 t ""')
         if res or rel_fac:
-            # linear or relative residuals
+            # col2 is linear (if res) or relative (if rel_fac) residuals
             col2 = rel_fac * np.mean(ymod) * (y/ymod - 1) if rel_fac else y - ymod
             rms = np.std(col2)
             prms = rms / np.mean(ymod) * 100
@@ -249,7 +271,6 @@ class model:
             args += (",", x, col2, x2, "us lam?3:1:2 w p pt 7 ps 0.5 lc 1 t 'res (%.3g \~ %.3g%%)', 0 lc 3 t ''" % (rms, prms))
         if rel_fac:
             args += (",", x, col2, x2, "us lam?3:1:2 w l lc 1 t 'res (%.3g \~ %.3g%%)', 0 lc 3 t ''" % (rms, prms))
-
         if res or rel_fac or dx:
             gplot.yrange("[:%g]" % (1.4*np.nanmax(ymod)))
             gplot(*args)
