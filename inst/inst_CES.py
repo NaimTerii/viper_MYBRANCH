@@ -71,6 +71,12 @@ def Spectrum(filename, order=None, targ=None, chksize=4000):
     return x, w, f, e_f, b, bjd, berv
 
 def Tpl(tplname, order=None, targ=None):
+    
+    # Check if template already convolved with the IP (If yes, will need to apply a different convolution in utils/model.py) ;
+    # Currently not applied to this instrument ; will need to add in the future if required
+    global tpl_IP_isconv    # define as global so it can be called from other files
+    tpl_IP_isconv = False    # Insert some condition to check if True or False (e.g. check inst/CARM_VIS.py)
+    
     if tplname.endswith('.dat'):
         # echelle template
         x, w, f, e, b, bjd, berv = Spectrum(tplname, targ=targ)
