@@ -11,6 +11,7 @@ This file was written by Naïm Teriitehau-Martin. For any issues, please contact
 ''' THIS IS STILL A WORK IN PROGRESS as of 20/04/2026'''
 
 import numpy as np
+import os
 from astropy.io import fits
 from astropy.time import Time
 from astropy.coordinates import SkyCoord, EarthLocation
@@ -18,7 +19,7 @@ import astropy.units as u
 from astropy.constants import c
 from scipy.interpolate import CubicSpline
 
-# from inst.template import read_tpl   #### DO NOT NEED IF APPLY BARYCENTRIC CORRECTION IN THIS FILE?
+from inst.template import read_tpl
 from inst.FTS_resample import resample, FTSfits 
 from inst.airtovac import airtovac
 
@@ -68,7 +69,6 @@ def Spectrum(filename='', order=None, targ=None):
     wavelen = hdu['WAVE'].data    # Vacuum wavelength for each pixel [angstrom]
     err_spec = hdu['SIG'].data    # Error estimate for flux
     
-    
     # If specific order is selected, only keep that order
     if order is not None:
         wavelen, spec, err_spec = wavelen[order], spec[order], err_spec[order]
@@ -83,61 +83,10 @@ def Spectrum(filename='', order=None, targ=None):
 def Tpl(tplname, order=None, targ=None):
     '''
     Tpl should return barycentric corrected wavelengths.
-    read_tpl(tplname) tries to call Spectrum(tplname=template_file) from the indicated inst file and apply a
-    barycentric correction to the returned wavelen (if tplname doesn't end with "_tpl")
+    read_tpl(tplname) reads wavelen and flux from template ; applies necessary corrections depending on type of file (barycentric correc, vacuum correc, ...)
     '''
-    # Check if template already convolved with the IP (If yes, will need to apply a different convolution in utils/model.py) ;
-    # IMPORTANT REMARK : Currently it only checks if template comes from SERVAL (no idea how it could be generalized to other sources of templates)
-    hdr = fits.open(tplname, ignore_blank=True)[0].header
-    tpl_is_serval = 'HIERARCH SERVAL COADD NUM' in hdr    # all SERVAL templates contain this key to indicate number of spectra used for coadd, but none of the data files contain it
-    
-    global tpl_IP_isconv    # define as global so it can be called from other files
-    tpl_IP_isconv = tpl_is_serval    # currently it only actually checks if the template comes from SERVAL
-    
+    wavelen, spec = read_tpl(tplname, inst=os.path.basename(__file__), order=order, targ=targ)
 
-    if tplname.endswith('.fits'):
-        try:
-            pixel, wavelen_k, spec_k, err_spec_k, flag_pixel, bjd, berv = Spectrum(tplname, order=order, targ=targ)
-            
-            #SERVAL templates store flux and natural log of vacuum wavelen as the "knot positions of uniform B-spline" 
-            #so we need to apply cubic spline to get data between the knots, and convert to linear wavelen
-            if tpl_is_serval:
-                # CubicSpline interpolation to artificially improve sampling in the template
-                wavelen = np.linspace(wavelen_k[0], wavelen_k[-1], 4*wavelen_k.size)    # Interpolate with 4 times as many points
-                spec = CubicSpline(wavelen_k, spec_k, bc_type='natural')(wavelen)   
-                wavelen = np.exp(wavelen) # Convert log knots to linear knots
-                
-            # tpl_R = 91_000
-        except:
-            print('\x1b[0;31;40mError : Barycentric correction for the selected .fits template has failed. \x1b[0m')
-            exit()
-            
-    elif tplname.endswith('.all'):    # for PEPSI templates
-        try:
-            hdu = fits.open(tplname)
-            wavelen = hdu[1].data.field('Arg')  # Wavelengths for template spectrum
-            spec = hdu[1].data.field('Fun') # Flux for template spectrum
-            wavelen = airtovac(wavelen)    # convert the wavelength values from air to vacuum. Unlike SERVAL templates which already take this into account
-            
-            '''
-            Check if template is from serval using something like the lines below?
-            there was Also something like if the resolution of the tpl is high enough then do not convolve with IP???
-                
-            global tpl_has_IP
-            # tpl_R = 200_000
-            tpl_has_IP = True
-            spec.tpl_has_IP = True
-            '''
-        except:
-            print('\x1b[0;31;40mError : Barycentric correction for the selected .all template has failed. \x1b[0m')
-            exit()
-            
-    else:
-        print('\x1b[0;31;40m' +'Error: Template format is not known for the selected instrument. \nPlease select a .fits file or .all file'+ '\x1b[0m')    
-        exit()
-        
-    #flux
-    #spec = (wavelen, flux, R) reutrn dict ? would need to change the other inst files and viper.py
     return wavelen, spec
 
 
