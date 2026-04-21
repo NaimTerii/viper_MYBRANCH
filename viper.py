@@ -285,7 +285,8 @@ def fit_chunk(order, chunk, obsname, targ=None, tpltarg=None):
 
     modset['xcen'] = xcen = np.nanmean(pixel_ok) + 18   # slight offset, then it converges for CES+TauCet
     modset['IP_hs'] = iphs
-    modset['tpl_IP_isconv'] = Inst.tpl_IP_isconv    # True or False : template is already convolved with IP       
+    read_tpl = importlib.import_module('inst.template')
+    modset['tpl_has_IP'] = getattr(read_tpl, 'tpl_has_IP', False)    # True or False : template is already convolved with IP (Returns False by default)   
 
     if deg_norm_rat:
         # rational polynomial
