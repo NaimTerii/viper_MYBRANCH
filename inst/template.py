@@ -7,11 +7,10 @@ import importlib
 import astropy.units as u
 from astropy.constants import c
 from astropy.io import fits
-from .airtovac import airtovac
+from inst.airtovac import airtovac
 
 
-def read_tpl(tplname, inst='inst_TLS.py', order=20, targ='None', wmin=3500, wmax=8000):
-
+def read_tpl(tplname, inst='inst_TLS.py', order=20, targ=None, wmin=3500, wmax=8000):
     successful_read = 0
     
     hdu = fits.open(tplname, ignore_blank=True, output_verify='silentfix')
@@ -29,6 +28,7 @@ def read_tpl(tplname, inst='inst_TLS.py', order=20, targ='None', wmin=3500, wmax
         
         successful_read = 1
     
+    
     elif tplname.endswith('_s1d_A.fits') or tplname.endswith('.tpl.s1d.fits'):
         print('read HARPS template', tplname)
         
@@ -42,20 +42,28 @@ def read_tpl(tplname, inst='inst_TLS.py', order=20, targ='None', wmin=3500, wmax
             wave = np.exp(wave)
         successful_read = 1
     
+    
     elif tplname.endswith('.fits') or tplname.endswith('.model'):
-       
         try:
           #  print('read '+inst.split('.')[0][5:]+' template', tplname)
             inst = importlib.import_module('inst.'+str(inst)[:-3])
-                       
             pixel, wave, spec, err, flag_pixel, bjd, berv = inst.Spectrum(tplname, order=order, targ=targ)
+                            
             if not tplname.endswith('_tpl.model') or not tplname.endswith('_tpl.fits'):
-                # apply barycentric correction
-                wave *= 1 + (berv*u.km/u.s/c).to_value('')
+                #SERVAL templates store flux and natural log of vacuum wavelen as the "knot positions of uniform B-spline"
+                tpl_is_serval = 'HIERARCH SERVAL COADD NUM' in hdr    # all SERVAL templates contain this key to indicate number of spectra used for coadd
+                tpl_has_IP = tpl_is_serval    # for .fits files : currently it only actually checks if the template comes from SERVAL
+                if tpl_is_serval:
+                    #SERVAL templates are already barycentric and vacuum corrected. They store log wavelengths
+                    wave = np.exp(wave) # Convert log knots to linear knots    
+                 else:
+                    # apply barycentric correction
+                    wave *= 1 + (berv*u.km/u.s/c).to_value('')
+                
             successful_read = 1
         except:
             pass        
-            
+        
         if not successful_read:        
             try:
                # long 1d template
@@ -66,6 +74,18 @@ def read_tpl(tplname, inst='inst_TLS.py', order=20, targ='None', wmin=3500, wmax
                 successful_read = 1
             except:
                 pass
+
+
+    elif tplname.endswith('.dxt.all*'):    # for PEPSI templates
+        try:
+            wave = hdu[1].data.field('Arg')  # Wavelengths from template spectrum
+            spec = hdu[1].data.field('Fun') # Flux from template spectrum
+            wave = airtovac(wave)
+            successful_read = 1
+        except:
+            pass  
+    
+
 
     elif 'PHOENIX' in str(tplname):
         '''
