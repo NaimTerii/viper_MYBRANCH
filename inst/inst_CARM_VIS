@@ -18,7 +18,7 @@ import astropy.units as u
 from astropy.constants import c
 from scipy.interpolate import CubicSpline
 
-# from inst.template import read_tpl   #### DO NOT NEED IF APPLY BARYCENTRIC CORRECTION IN THIS FILE?
+from inst.template import read_tpl
 from inst.FTS_resample import resample, FTSfits 
 
 oset = '20:50'    # Relative orders that are analyzed (Here we keep only the 20th to 49th available orders, ) (for CARM_VIS, the absolute orders start at 118 [low wavlengths] and end at 58 [high wavelengths])
@@ -83,35 +83,10 @@ def Spectrum(filename='', order=None, targ=None):
 def Tpl(tplname, order=None, targ=None):
     '''
     Tpl should return barycentric corrected wavelengths.
-    read_tpl(tplname) tries to call Spectrum(tplname=template_file) from the indicated inst file and apply a
-    barycentric correction to the returned wavelen (if tplname doesn't end with "_tpl")
-    
-    Currently this only works with templates that store wavelen data as natural log wavelen (like the ones produced by serval)
-    Because the wavelen are converted into linear wavelen via np.exp()
+    read_tpl(tplname) reads wavelen and flux from template ; applies necessary corrections depending on type of file (barycentric correc, vacuum correc, ...)
     '''
-    
-    
-    '''
-    SERVAL templates store spec and natural log of vacuum wavelen as the "knot positions of uniform B-spline"
-    so we need to convert to linear wavelen then apply cubic spline to get data between the knots
-    '''
-    if tplname.endswith('.fits'):   #The only type of SERVAL template I am aware of
-        try:
-            pixel, wavelen_k, spec_k, err_spec_k, flag_pixel, bjd, berv = Spectrum(tplname, order=order, targ=targ)
-            '''SERVAL already applies barycentric correction to templates, so the line below can be removed'''
-            #wavelen_k *= 1 + (berv*u.km/u.s/c).to_value('') # Apply barycentric correction
-        except:
-            print('Error : Barycentric correction for the selected template has failed.')
-            exit()
-    else:
-        print('\x1b[0;31;40m' +'Error: Template format is not known for the selected instrument. \nPlease select a .fits file'+ '\x1b[0m')    
-        exit()
-    
-    # CubicSpline interpolation to artificially improve sampling in the template
-    wavelen = np.linspace(wavelen_k[0], wavelen_k[-1], 4*wavelen_k.size)    # Interpolate with 4 times as many points
-    spec = CubicSpline(wavelen_k, spec_k, bc_type='natural')(wavelen)   
-    wavelen = np.exp(wavelen) # Convert log knots to linear knots
-    
+    wavelen, spec = read_tpl(tplname, inst=os.path.basename(__file__), order=order, targ=targ)
+
     return wavelen, spec
 
 
