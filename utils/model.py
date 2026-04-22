@@ -164,9 +164,9 @@ class model:
         self.xcen = xcen
         self.S_star, self.lnwave_j, self.spec_cell_j, self.fluxes_molec, self.IP = args
         # convolving with IP will reduce the valid wavelength range
-        self.dx = self.lnwave_j[1] - self.lnwave_j[0]   # step size of the uniform sampled grid
+        self.dx = self.lnwave_j[1] - self.lnwave_j[0]   # step size of the uniform sampled grid (wavelength)
         self.IP_hs = IP_hs
-        self.vk = np.arange(-IP_hs, IP_hs+1) * self.dx * c
+        self.vk = np.arange(-IP_hs, IP_hs+1) * self.dx * c    # position of sampling knots for the IP (expressed as speed)
         self.lnwave_j_eff = self.lnwave_j[IP_hs:-IP_hs]    # valid grid
         self.func_norm = func_norm
         self.tpl_has_IP = tpl_has_IP
@@ -175,6 +175,7 @@ class model:
 
     def __call__(self, pixel, rv=0, norm=[1], wave=[], ip=[], atm=[], bkg=[0], ipB=[]):
         # renaming (coeff is ok prefix below, but too verbose for par)
+        #the arguments of this function are the parameters (ip = par.ip, wave = par.wave, ...)
         coeff_norm, coeff_wave, coeff_ip, coeff_atm, coeff_bkg, coeff_ipB = norm, wave, ip, atm, bkg, ipB
 
         spec_gas = 1 * self.spec_cell_j
@@ -209,8 +210,10 @@ class model:
         # flux normalisation
         Si_mod = self.func_norm(pixel-self.xcen, coeff_norm) * Si_eff
         #Si_mod = self.func_norm((np.exp(lnwave_obs)-b[0]-coeff_norm[-1]), coeff_norm[:-1]) * Si_eff
+        
         return Si_mod
 
+    
     def fit(self, pixel, spec_obs, par, sig=[], **kwargs):
         '''
         Generic fit wrapper.
@@ -232,6 +235,7 @@ class model:
 
         return pnew, e_params
 
+    
     def show(self, params, x, y, par_rv=None, res=True, x2=None, dx=None, rel_fac=None):
         '''
         res: Show residuals.
@@ -253,19 +257,22 @@ class model:
         # toggle between pixel and wavelength with shortcut "$"
         gplot.bind('"$" "lam=!lam; set xlabel lam?\\"Vacuum wavelength [Å]\\":\\"Pixel x\\"; replot"')
         args = (x, y, ymod, x2, 'us lam?4:1:2:3 w lp pt 7 ps 0.5 t "obs",',
-          '"" us lam?4:1:3 w p pt 6 ps 0.5 lc 3 t "model"')
+          '"" us lam?4:1:3 w p pt 6 ps 0.5 lc 3 t "model"')    # add to the plot : x=pixels, y=observation flux, ymod=fitted flux model, x2 = wavelen
         prms = np.nan   # percentage prms
+        
         if dx:
             xx = np.arange(x.min(), x.max(), dx)
             xx2 = np.poly1d(params.wave[::-1])(xx-self.xcen)
             yymod = self(xx, **params)
             args += (",", xx, yymod, xx2, 'us lam?3:1:2 w l lc 3 t ""')
+            
         if res or rel_fac:
-            # linear or relative residuals
+            # col2 is linear (if res) or relative (if rel_fac) residuals
             col2 = rel_fac * np.mean(ymod) * (y/ymod - 1) if rel_fac else y - ymod
             rms = np.std(col2)
             prms = rms / np.mean(ymod) * 100
             gplot.mxtics().mytics().my2tics()
+            
         if res:
             args += (",", x, col2, x2, "us lam?3:1:2 w p pt 7 ps 0.5 lc 1 t 'res (%.3g \~ %.3g%%)', 0 lc 3 t ''" % (rms, prms))
         if rel_fac:
