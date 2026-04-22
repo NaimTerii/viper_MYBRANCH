@@ -132,12 +132,32 @@ def pade(x, a, b):
     return y
 
 
+def convolution(S_star, func_IP, T_cell_atm, tpl_has_IP=False, IP_hs=50):
+    '''
+    Convolution with the IP as described in equation (7) of J. Koehler et al. 2025, A&A, 698, A44. 
+   If star spectrum is already convolved with IP : we do not want to convolve it again ; so we approximate the convolution (see appendix A of E. Nagel et al. 2023, A&A, 680, A73)
+    S_star is the stellar template
+    func_IP is the function of the IP (one of the many defined above)
+    T_cell_atm is the transmission of the cell multiplied by transmission of the atmosphere
+    '''
+    if not tpl_has_IP:   # if tpl not convolved with IP : Apply regular convolution
+        Sj_eff = np.convolve(func_IP, S_star * T_cell_atm, mode='valid')
+
+    #but if tpl already convolved with IP (eg. during template creation by coadding observation spectra): Take S_star out of convolution with IP 
+    else: 
+        Sj_eff = S_star[IP_hs:-IP_hs] * np.convolve(func_IP, T_cell_atm, mode='valid')
+        #convolution np.conv(mode='valid') trims edges of the largest array (removes as many data points as there are in the smallest array -- see np docs). 
+        #here it trims [len(func_IP) = IP_hs] data points on either side of T_cell_atm (which has same length as S_star) : so we trim S_star the same way to be able to multiply it with the convolution
+    
+    return Sj_eff
+
+
 class model:
     '''
     The forward model.
 
     '''
-    def __init__(self, *args, func_norm=poly, IP_hs=50, xcen=0):
+    def __init__(self, *args, func_norm=poly, IP_hs=50, xcen=0, tpl_has_IP=False):
         # IP_hs: Half size of the IP (number of sampling knots).
         # xcen: Central pixel (to center polynomial for numeric reason).
 
@@ -149,7 +169,9 @@ class model:
         self.vk = np.arange(-IP_hs, IP_hs+1) * self.dx * c    # position of sampling knots for the IP (expressed as speed)
         self.lnwave_j_eff = self.lnwave_j[IP_hs:-IP_hs]    # valid grid
         self.func_norm = func_norm
+        self.tpl_has_IP = tpl_has_IP
         #print("sampling [km/s]:", self.dx*c)
+    
 
     def __call__(self, pixel, rv=0, norm=[1], wave=[], ip=[], atm=[], bkg=[0], ipB=[]):
         # renaming (coeff is ok prefix below, but too verbose for par)
@@ -169,11 +191,10 @@ class model:
             spec_gas *= flux_atm
 
         # apply IP convolution
-        Sj_eff = np.convolve(self.IP(self.vk, *coeff_ip), self.S_star(self.lnwave_j-rv/c) * (spec_gas + coeff_bkg[0]), mode='valid')
-
+        Sj_eff = convolution(S_star=self.S_star(self.lnwave_j-rv/c), func_IP=self.IP(self.vk, *coeff_ip), T_cell_atm=(spec_gas + coeff_bkg[0]), tpl_has_IP=self.tpl_has_IP, IP_hs=self.IP_hs)
         if len(coeff_ipB):
             coeff_ipB = [coeff_ipB[0]*coeff_ip[0], *coeff_ip[1:]]
-            Sj_B = np.convolve(self.IP(self.vk, *coeff_ipB), self.S_star(self.lnwave_j-rv/c) * (spec_gas + coeff_bkg[0]), mode='valid')
+            Sj_B = convolution(S_star=self.S_star(self.lnwave_j-rv/c), func_IP=self.IP(self.vk, *coeff_ipB), T_cell_atm=(spec_gas + coeff_bkg[0]), tpl_has_IP=self.tpl_has_IP, IP_hs=self.IP_hs)
             Sj_A = Sj_eff
             g = self.lnwave_j_eff - self.lnwave_j_eff[0]
             g /= g[-1]
