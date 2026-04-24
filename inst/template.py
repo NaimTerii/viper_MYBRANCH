@@ -75,7 +75,7 @@ def read_tpl(tplname, inst='inst_TLS.py', order=20, targ=None, wmin=3500, wmax=8
                 pass
 
 
-    elif tplname.endswith('.dxt.all*'):    # for PEPSI templates
+    elif tplname.endswith('.dxt.all') or tplname.endswith('.dxt.all', 0, -1):    # for PEPSI templates
         try:
             wave = hdu[1].data.field('Arg')  # Wavelengths from template spectrum
             spec = hdu[1].data.field('Fun') # Flux from template spectrum
