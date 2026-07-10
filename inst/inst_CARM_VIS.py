@@ -145,6 +145,5 @@ def write_fits(wave_tpl_all, spec_tpl_all, err_tpl_all, list_files, file_out):
     ## --> The fix puts EXTNAME(='SIG','WAVE','SPEC') after PCOUNT and GCOUNT instead of before
     hdu.writeto(file_out+'_tpl.fits', output_verify='silentfix', overwrite=True)
     hdu.close()
-    return FP_drift, e_drift
 
     
