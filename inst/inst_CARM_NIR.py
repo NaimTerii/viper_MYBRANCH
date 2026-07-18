@@ -203,7 +203,7 @@ def driftcorr(tag, obsnames, orders, chunks, tellshift_option=False):
 
 
             # read the .rvo.dat file produced by viper, to gather the data
-            rvodata = np.genfromtxt(tag+'.rvo.dat', dtype=None, delimiter=' ', names=True, encoding=None)
+            rvodata = np.genfromtxt(tag+'.rvo.dat', dtype=None, delimiter=' ', names=True, deletechars='', encoding=None)
 
             # gather data from files
             bjd, RV, e_RV, berv, filename = rvodata['BJD'], rvodata['RV'], rvodata['e_RV'], rvodata['BERV'], rvodata['filename']
